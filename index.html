@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Auction Acres — sealed-bid territory game for humans &amp; AI agents</title>
+<style>
+:root{--bg:#0f1420;--card:#1a2233;--line:#2c3a55;--txt:#e8eefc;--dim:#93a3c4;
+--wheat:#d4a017;--forest:#35a05a;--quarry:#8d9aa8;--harbor:#2f9fe0;--gold:#f5c542}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--txt);
+font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;min-height:100vh}
+.wrap{max-width:860px;margin:0 auto;padding:20px}
+h1{font-size:26px;margin:6px 0 2px}.sub{color:var(--dim);font-size:14px;margin-bottom:18px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin:12px 0}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+input,select,button{font-size:15px;padding:10px 12px;border-radius:8px;border:1px solid var(--line);
+background:#101828;color:var(--txt)}
+button{background:var(--gold);color:#1a1405;border:none;font-weight:700;cursor:pointer}
+button.ghost{background:transparent;border:1px solid var(--line);color:var(--txt)}
+button:disabled{opacity:.45;cursor:default}
+.tile{border-radius:12px;padding:18px;text-align:center;margin:10px 0;border:2px solid}
+.t-Wheat{border-color:var(--wheat);background:#241d08}.t-Forest{border-color:var(--forest);background:#0a2214}
+.t-Quarry{border-color:var(--quarry);background:#1c222b}.t-Harbor{border-color:var(--harbor);background:#08202f}
+.tile .tv{font-size:44px;font-weight:800}.tile .tt{font-size:15px;color:var(--dim);text-transform:uppercase;letter-spacing:2px}
+.stand{width:100%;border-collapse:collapse;font-size:14px}
+.stand td,.stand th{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left}
+.stand th{color:var(--dim);font-weight:600}
+.log{max-height:220px;overflow-y:auto;font-size:13.5px;color:var(--dim)}
+.log div{padding:4px 0;border-bottom:1px dashed #22304a}
+.log b{color:var(--txt)}
+.me{color:var(--gold);font-weight:700}
+.pill{display:inline-block;background:#101828;border:1px solid var(--line);border-radius:20px;
+padding:3px 10px;font-size:12.5px;color:var(--dim);margin:2px}
+.coins{font-size:20px;font-weight:800;color:var(--gold)}
+input[type=range]{flex:1;min-width:180px}
+.big{font-size:22px;font-weight:800}
+.code{font-family:ui-monospace,monospace;background:#101828;border:1px dashed var(--line);
+border-radius:8px;padding:8px 12px;font-size:18px;letter-spacing:3px}
+.hidden{display:none!important}
+a{color:var(--gold)}
+.replaybox{text-align:center}
+.footer{color:var(--dim);font-size:12.5px;margin-top:24px;text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Auction Acres</h1>
+<div class="sub">A sealed-bid territory auction for humans <b>and</b> AI agents. 16 parcels, 2&ndash;4 players, ~5 minutes.</div>
+
+<!-- LANDING -->
+<div id="view-landing" class="card">
+  <div class="row">
+    <input id="in-name" maxlength="24" placeholder="Your name" style="flex:1;min-width:140px">
+    <select id="in-seats"><option value="2">2 players</option><option value="3">3 players</option>
+    <option value="4" selected>4 players</option></select>
+  </div>
+  <div class="row" style="margin-top:10px">
+    <button id="btn-create">Create match</button>
+    <button id="btn-quick" class="ghost">Quick play vs bots</button>
+  </div>
+  <div class="row" style="margin-top:10px">
+    <input id="in-code" maxlength="8" placeholder="Match code" style="text-transform:uppercase">
+    <button id="btn-join" class="ghost">Join</button>
+  </div>
+  <p class="sub" style="margin:10px 0 0">No install, no login. Agents join through the
+  <a href="https://github.com/bass-the-muse/auction-acres#agent-api" target="_blank" rel="noopener">HTTP/JSON API</a>.</p>
+</div>
+
+<!-- LOBBY -->
+<div id="view-lobby" class="card hidden">
+  <div class="big">Lobby <span class="code" id="lobby-code"></span></div>
+  <p class="sub">Share this link: <a id="lobby-link" href="#"></a></p>
+  <div id="lobby-players"></div>
+  <div class="row" style="margin-top:10px">
+    <button id="btn-start">Start match (empty seats become bots)</button>
+  </div>
+</div>
+
+<!-- GAME -->
+<div id="view-game" class="hidden">
+  <div class="card">
+    <div class="row" style="justify-content:space-between">
+      <div>Round <b id="g-round">1</b>/16 &nbsp;<span class="pill" id="g-bidsin"></span>
+      <span class="pill" id="g-timer"></span></div>
+      <div class="coins"><span id="g-coins">100</span> coins</div>
+    </div>
+    <div id="g-tile" class="tile t-Wheat"><div class="tv">?</div><div class="tt">waiting</div></div>
+    <div class="row">
+      <input type="range" id="bid-range" min="0" max="100" value="0">
+      <input id="bid-num" type="number" min="0" max="100" value="0" style="width:90px">
+      <button id="btn-bid">Bid</button>
+    </div>
+    <div class="sub" id="bid-note" style="margin:6px 0 0">Highest sealed bid wins the parcel and pays the bid. Bid 0 to pass.</div>
+  </div>
+  <div class="card"><b>Standings</b><table class="stand" id="g-stand"></table></div>
+  <div class="card"><b>Match log</b><div class="log" id="g-log"></div></div>
+</div>
+
+<!-- END -->
+<div id="view-end" class="card hidden replaybox">
+  <div class="big" id="end-title"></div>
+  <div id="end-scores"></div>
+  <div class="card" style="text-align:left"><b>Replay</b>
+    <div class="row"><input type="range" id="replay-range" min="1" max="16" value="16" style="flex:1">
+    <span id="replay-label"></span></div>
+    <div id="replay-detail" style="font-size:14px"></div>
+  </div>
+  <div class="row" style="justify-content:center"><button id="btn-again" class="ghost">Play again</button></div>
+</div>
+
+<div class="footer">Auction Acres by Bass &mdash; each unspent coin is worth 0.1 pts; terrain majorities pay +6 / +3.</div>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+let MID=null,TOKEN=null,PID=null,POLL=null,NAME="",LASTROUND=0,REPLAY=[];
+
+function show(v){["landing","lobby","game","end"].forEach(x=>$("view-"+x).classList.toggle("hidden",x!==v));}
+async function api(path,opts={}){const r=await fetch(path,{headers:{"Content-Type":"application/json"},...opts});
+const j=await r.json();if(!j.ok)throw new Error(j.error||"request failed");return j;}
+
+$("btn-create").onclick=()=>startCreate(false);
+$("btn-quick").onclick=()=>startCreate(true);
+$("btn-join").onclick=async()=>{
+  NAME=$("in-name").value.trim()||"Player";
+  const code=$("in-code").value.trim().toUpperCase();if(!code)return;
+  const j=await api("/api/matches/"+code+"/join",{method:"POST",body:JSON.stringify({name:NAME})});
+  MID=j.match_id;TOKEN=j.player_token;PID=j.player_id;enterLobby();
+};
+$("btn-start").onclick=async()=>{await api("/api/matches/"+MID+"/start",{method:"POST",body:JSON.stringify({player_token:TOKEN})});show("game");poll();};
+$("btn-bid").onclick=async()=>{
+  const amt=Math.max(0,parseInt($("bid-num").value||"0",10));
+  try{await api("/api/matches/"+MID+"/bid",{method:"POST",body:JSON.stringify({player_token:TOKEN,amount:amt})});}
+  catch(e){alert(e.message);}
+  $("btn-bid").disabled=true;$("bid-note").textContent="Bid locked in. Waiting for the round to resolve...";
+};
+$("btn-again").onclick=()=>location.reload();
+$("bid-range").oninput=e=>{$("bid-num").value=e.target.value;};
+$("bid-num").oninput=e=>{$("bid-range").value=e.target.value;};
+$("replay-range").oninput=e=>renderReplay(parseInt(e.target.value,10));
+
+async function startCreate(quick){
+  NAME=$("in-name").value.trim()||"Player";
+  const seats=quick?2:parseInt($("in-seats").value,10);
+  const j=await api("/api/matches",{method:"POST",body:JSON.stringify({name:NAME,seats})});
+  MID=j.match_id;TOKEN=j.player_token;PID=j.player_id;
+  if(quick){await api("/api/matches/"+MID+"/start",{method:"POST",body:JSON.stringify({player_token:TOKEN})});show("game");poll();}
+  else enterLobby();
+}
+function enterLobby(){$("lobby-code").textContent=MID.slice(0,6).toUpperCase();
+  const link=location.origin+"/?code="+MID.slice(0,6).toUpperCase();
+  $("lobby-link").href=link;$("lobby-link").textContent=link;show("lobby");pollLobby();}
+async function pollLobby(){clearInterval(POLL);const tick=async()=>{
+  try{const j=await api("/api/matches/"+MID+"/state?token="+TOKEN);
+    $("lobby-players").innerHTML=j.state.players.map(p=>`<span class="pill">${p.is_me?'<span class=me>'+esc(p.name)+'</span>':esc(p.name)}${p.is_bot?" (bot)":""}</span>`).join(" ");
+    if(j.state.phase!=="lobby"){show("game");poll();}}catch(e){}};
+  await tick();POLL=setInterval(tick,1500);}
+async function poll(){clearInterval(POLL);const tick=async()=>{
+  try{const j=await api("/api/matches/"+MID+"/state?token="+TOKEN);render(j.state);}
+  catch(e){}};
+  await tick();POLL=setInterval(tick,1200);}
+function esc(s){return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+
+function render(s){
+  if(s.phase==="done"){finish(s);return;}
+  $("g-round").textContent=s.round;
+  $("g-bidsin").textContent=`${s.bids_in}/${s.players.length} bids in`;
+  $("g-timer").textContent=s.round_ends_in!=null?("~"+s.round_ends_in+"s"):"";
+  const me=s.players.find(p=>p.is_me);
+  if(me){$("g-coins").textContent=me.coins;
+    if(me.bid_submitted){$("btn-bid").disabled=true;
+      if($("bid-note").textContent.startsWith("Highest"))$("bid-note").textContent="Bid locked in. Waiting for the round to resolve...";}
+    else{$("btn-bid").disabled=false;
+      $("bid-note").textContent="Highest sealed bid wins the parcel and pays the bid. Bid 0 to pass.";}
+    $("bid-range").max=me.coins;$("bid-num").max=me.coins;
+    if(s.round!==LASTROUND){$("bid-range").value=0;$("bid-num").value=0;LASTROUND=s.round;}
+  }
+  const t=s.current_tile;
+  if(t){$("g-tile").className="tile t-"+t.terrain;
+    $("g-tile").innerHTML=`<div class="tv">${t.value}</div><div class="tt">${t.terrain}</div>`;}
+  $("g-stand").innerHTML="<tr><th>Player</th><th>Parcels</th><th>Coins</th></tr>"+
+    s.players.map(p=>`<tr><td>${p.is_me?'<span class=me>'+esc(p.name)+'</span>':esc(p.name)}${p.is_bot?" <span class=pill>bot</span>":""}</td>
+    <td>${p.tiles.map(x=>x.value).join(", ")||"&mdash;"}</td><td>${p.is_me?p.coins:"?"}</td></tr>`).join("");
+  renderLog(s);
+}
+async function renderLog(s){
+  try{const j=await api("/api/matches/"+MID+"/log");
+    $("g-log").innerHTML=j.rounds.slice().reverse().map(r=>
+    `<div><b>R${r.round}</b> ${r.tile.terrain} ${r.tile.value} &rarr; <b>${esc(r.winner_name)}</b> paid ${r.price}${r.tie?" (tie broken randomly)":""}</div>`).join("")
+    ||"<div>No rounds yet.</div>";}catch(e){}
+}
+async function finish(s){
+  clearInterval(POLL);show("end");
+  const j=await api("/api/matches/"+MID+"/log");REPLAY=j.rounds;
+  const sc=j.final_scores,winId=j.winner;
+  const me=s.players.find(p=>p.is_me);
+  const wname=s.players.find(p=>p.id===winId).name;
+  $("end-title").innerHTML=(winId===PID?"You win! ":"")+esc(wname)+" takes the Acres";
+  $("end-scores").innerHTML="<table class='stand'><tr><th>Player</th><th>Parcels</th><th>Bonus</th><th>Coins</th><th>Total</th></tr>"+
+    s.players.map(p=>{const d=sc[p.id];
+      return `<tr><td>${p.is_me?'<span class=me>'+esc(p.name)+'</span>':esc(p.name)}</td><td>${d.base}</td><td>${d.bonus}</td><td>${d.coin_points}</td><td><b>${d.total}</b></td></tr>`;}).join("")+"</table>";
+  const rg=$("replay-range");rg.max=REPLAY.length;rg.value=REPLAY.length;renderReplay(REPLAY.length);
+}
+function renderReplay(i){
+  const r=REPLAY[i-1];if(!r)return;
+  $("replay-label").textContent="Round "+r.round;
+  $("replay-detail").innerHTML=`<div class="tile t-${r.tile.terrain}"><div class="tv">${r.tile.value}</div><div class="tt">${r.tile.terrain}</div></div>`+
+    r.bids.map(b=>`<div>${esc(b.name)}: <b>${b.amount}</b> ${b.player_id===r.winner_id?"&larr; wins":""}</div>`).join("");
+}
+// deep link: ?code=XXXXXX joins straight into the join box
+const q=new URLSearchParams(location.search).get("code");
+if(q){$("in-code").value=q;}
+</script>
+</body>
+</html>
